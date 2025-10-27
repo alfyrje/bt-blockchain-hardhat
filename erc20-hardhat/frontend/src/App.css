@@ -40,7 +40,8 @@
 
 /* Tab Navigation */
 .tab-navigation {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
   background: rgba(255, 255, 255, 0.05);
   border-radius: 12px;
   padding: 4px;
@@ -117,6 +118,16 @@
 
 .form-input::placeholder {
   color: rgba(255, 255, 255, 0.5);
+}
+
+.form-input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.form-input[type="number"]::-webkit-outer-spin-button,
+.form-input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* Transfer Info */
@@ -450,6 +461,78 @@
   to { transform: rotate(360deg); }
 }
 
+/* Sale Info Section */
+.sale-info {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.sale-info h3 {
+  margin: 0 0 1rem 0;
+  color: #667eea;
+  font-size: 1.2rem;
+  text-align: center;
+}
+
+.sale-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.8rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-label {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.stat-value {
+  color: white;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-align: right;
+}
+
+/* Token Preview */
+.token-preview {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  padding: 1rem 1.5rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  color: white;
+  font-size: 1.1rem;
+}
+
+.token-preview strong {
+  font-weight: 700;
+  font-size: 1.2rem;
+}
+
+/* Buy Info */
+.buy-info {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+  color: #3b82f6;
+  font-size: 0.9rem;
+}
+
 /* Responsive Design */
 @media (max-width: 640px) {
   .app-container {
@@ -513,6 +596,37 @@
   .history-meta {
     flex-direction: column;
     gap: 0.5rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .tab-navigation {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .sale-stats {
+    grid-template-columns: 1fr;
+  }
+  
+  .stat-item {
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: center;
+  }
+  
+  .stat-value {
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .tab-navigation {
+    grid-template-columns: 1fr;
+  }
+  
+  .tab-btn {
+    padding: 1rem;
+    font-size: 0.95rem;
   }
 }
 

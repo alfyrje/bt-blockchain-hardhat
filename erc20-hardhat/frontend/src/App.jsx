@@ -17,8 +17,20 @@ function App() {
   const [transferHistory, setTransferHistory] = useState([])
   const [blockchainHistory, setBlockchainHistory] = useState([])
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
-  const [activeTab, setActiveTab] = useState('approve') // 'approve', 'transfer', 'history'
+  const [activeTab, setActiveTab] = useState('approve') // 'approve', 'transfer', 'history', 'buy'
   const [historySource, setHistorySource] = useState('local') // 'local' or 'blockchain'
+
+  // New state for token buying functionality
+  const [tokenSaleAddress, setTokenSaleAddress] = useState('')
+  const [ethAmount, setEthAmount] = useState('')
+  const [tokenRate, setTokenRate] = useState('')
+  const [tokensToReceive, setTokensToReceive] = useState('')
+  const [saleStats, setSaleStats] = useState({
+    totalEthRaised: '0',
+    totalTokensSold: '0',
+    availableTokens: '0',
+    tokenPrice: '0'
+  })
 
   // Load transfer history from localStorage on component mount
   useEffect(() => {
@@ -39,11 +51,90 @@ function App() {
     setAddress(addr)
   }
 
+  async function fetchSaleInfo() {
+    if (!tokenSaleAddress) return
+    try {
+      const provider = new ethers.providers.Web3Provider(window.ethereum)
+      const abi = [
+        'function rate() view returns (uint256)',
+        'function getTokenPrice() view returns (uint256)',
+        'function totalEthRaised() view returns (uint256)',
+        'function totalTokensSold() view returns (uint256)',
+        'function getTokenBalance() view returns (uint256)',
+        'function calculateTokens(uint256 ethAmount) view returns (uint256)'
+      ]
+      const contract = new ethers.Contract(tokenSaleAddress, abi, provider)
+
+      const [rate, tokenPrice, totalEthRaised, totalTokensSold, availableTokens] = await Promise.all([
+        contract.rate(),
+        contract.getTokenPrice(),
+        contract.totalEthRaised(),
+        contract.totalTokensSold(),
+        contract.getTokenBalance()
+      ])
+
+      setTokenRate(ethers.utils.formatUnits(rate, 0)) // rate is already in token units
+      setSaleStats({
+        totalEthRaised: ethers.utils.formatEther(totalEthRaised),
+        totalTokensSold: ethers.utils.formatUnits(totalTokensSold, 18),
+        availableTokens: ethers.utils.formatUnits(availableTokens, 18),
+        tokenPrice: ethers.utils.formatEther(tokenPrice)
+      })
+
+      // Calculate tokens for current ETH amount
+      if (ethAmount) {
+        const tokens = await contract.calculateTokens(ethers.utils.parseEther(ethAmount))
+        setTokensToReceive(ethers.utils.formatUnits(tokens, 18))
+      }
+    } catch (err) {
+      console.error('Error fetching sale info:', err)
+    }
+  }
+
+  async function buyTokens() {
+    if (!tokenSaleAddress || !ethAmount) return alert('Missing inputs for token purchase')
+    if (parseFloat(ethAmount) <= 0) return alert('ETH amount must be greater than 0')
+    
+    setIsLoading(true)
+    try {
+      const provider = new ethers.providers.Web3Provider(window.ethereum)
+      const signer = provider.getSigner()
+
+      const abi = [
+        'function buyTokens() payable',
+        'function calculateTokens(uint256 ethAmount) view returns (uint256)'
+      ]
+      const contract = new ethers.Contract(tokenSaleAddress, abi, signer)
+
+      const ethValue = ethers.utils.parseEther(ethAmount)
+      const expectedTokens = await contract.calculateTokens(ethValue)
+      
+      setStatus(`Buying ${ethers.utils.formatUnits(expectedTokens, 18)} tokens for ${ethAmount} ETH...`)
+      
+      const tx = await contract.buyTokens({ value: ethValue })
+      setStatus('Purchase transaction sent...')
+      
+      const receipt = await tx.wait()
+      setStatus('✅ Tokens purchased successfully!')
+
+      // Clear form and refresh sale info
+      setEthAmount('')
+      setTokensToReceive('')
+      await fetchSaleInfo()
+      
+    } catch (err) {
+      console.error(err)
+      setStatus('❌ Error purchasing tokens')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   async function fetchBlockchainHistory() {
     if (!token) return alert('Please enter a token contract address')
     setIsLoadingHistory(true)
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum)
+      const provider = new ethers.providers.Web3Provider(window.ethereum)
       
       const abi = [
         'event Transfer(address indexed from, address indexed to, uint256 value)',
@@ -78,8 +169,8 @@ function App() {
       const processedHistory = await Promise.all(
         transferEvents.slice(-50).reverse().map(async (event) => { // Get last 50 events
           try {
-            const tx = await event.getTransaction()
-            const receipt = await event.getTransactionReceipt()
+            const tx = await provider.getTransaction(event.transactionHash)
+            const receipt = await provider.getTransactionReceipt(event.transactionHash)
             
             // Check if this was a transferFrom (not a direct transfer)
             // transferFrom typically shows spender as the transaction sender, not the 'from' address
@@ -90,7 +181,7 @@ function App() {
               txHash: event.transactionHash,
               from: event.args.from,
               to: event.args.to,
-              amount: ethers.formatUnits(event.args.value, decimals),
+              amount: ethers.utils.formatUnits(event.args.value, decimals),
               tokenAddress: token,
               tokenName,
               tokenSymbol: symbol,
@@ -131,8 +222,8 @@ function App() {
     if (!token || !spender || !amount) return alert('Missing inputs')
     setIsLoading(true)
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum)
-      const signer = await provider.getSigner()
+      const provider = new ethers.providers.Web3Provider(window.ethereum)
+      const signer = provider.getSigner()
 
       const abi = [
         'function approve(address spender, uint256 amount) public returns (bool)',
@@ -142,7 +233,7 @@ function App() {
       const contract = new ethers.Contract(token, abi, signer)
 
       const decimals = await contract.decimals()
-      const tx = await contract.approve(spender, ethers.parseUnits(amount, decimals))
+      const tx = await contract.approve(spender, ethers.utils.parseUnits(amount, decimals))
       setStatus('Transaction sent...')
       await tx.wait()
       setStatus('✅ Approved successfully!')
@@ -160,8 +251,8 @@ function App() {
     }
     setIsLoading(true)
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum)
-      const signer = await provider.getSigner()
+      const provider = new ethers.providers.Web3Provider(window.ethereum)
+      const signer = provider.getSigner()
 
       const abi = [
         'function transferFrom(address from, address to, uint256 amount) public returns (bool)',
@@ -178,7 +269,7 @@ function App() {
       const tx = await contract.transferFrom(
         fromAddress, 
         toAddress, 
-        ethers.parseUnits(transferAmount, decimals)
+        ethers.utils.parseUnits(transferAmount, decimals)
       )
       setStatus('Transfer transaction sent...')
       
@@ -222,7 +313,7 @@ function App() {
     if (!token || !spender) return alert('Missing inputs')
     setIsLoading(true)
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum)
+      const provider = new ethers.providers.Web3Provider(window.ethereum)
       const [owner] = await window.ethereum.request({ method: 'eth_accounts' })
       const abi = [
         'function allowance(address owner, address spender) public view returns (uint256)',
@@ -231,7 +322,7 @@ function App() {
       const contract = new ethers.Contract(token, abi, provider)
       const decimals = await contract.decimals()
       const raw = await contract.allowance(owner, spender)
-      const readable = ethers.formatUnits(raw, decimals)
+      const readable = ethers.utils.formatUnits(raw, decimals)
       setStatus(`💰 Current Allowance: ${readable} tokens`)
     } catch (err) {
       console.error(err)
@@ -240,6 +331,33 @@ function App() {
       setIsLoading(false)
     }
   }
+
+  // Update tokens to receive when ETH amount changes
+  useEffect(() => {
+    if (tokenSaleAddress && ethAmount && parseFloat(ethAmount) > 0) {
+      const calculateTokens = async () => {
+        try {
+          const provider = new ethers.providers.Web3Provider(window.ethereum)
+          const abi = ['function calculateTokens(uint256 ethAmount) view returns (uint256)']
+          const contract = new ethers.Contract(tokenSaleAddress, abi, provider)
+          const tokens = await contract.calculateTokens(ethers.utils.parseEther(ethAmount))
+          setTokensToReceive(ethers.utils.formatUnits(tokens, 18))
+        } catch (err) {
+          setTokensToReceive('')
+        }
+      }
+      calculateTokens()
+    } else {
+      setTokensToReceive('')
+    }
+  }, [ethAmount, tokenSaleAddress])
+
+  // Auto-fetch sale info when tokenSaleAddress changes
+  useEffect(() => {
+    if (tokenSaleAddress) {
+      fetchSaleInfo()
+    }
+  }, [tokenSaleAddress])
 
   const clearHistory = () => {
     if (historySource === 'local') {
@@ -275,7 +393,7 @@ function App() {
     <div className="app-container">
       <div className="app-card">
         <h1 className="app-title">ERC-20 Token Manager</h1>
-        <p className="app-subtitle">Approve token spending, execute transfers, and track transaction history</p>
+        <p className="app-subtitle">Approve, transfer, buy tokens, and track transaction history</p>
         
         {address ? (
           <div className="connection-status">
@@ -304,6 +422,12 @@ function App() {
             Transfer From
           </button>
           <button 
+            className={`tab-btn ${activeTab === 'buy' ? 'active' : ''}`}
+            onClick={() => setActiveTab('buy')}
+          >
+            Buy Tokens
+          </button>
+          <button 
             className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
             onClick={() => setActiveTab('history')}
           >
@@ -311,15 +435,99 @@ function App() {
           </button>
         </div>
 
-        {/* Token Address Input - Common for all tabs */}
-        <div className="form-group">
-          <input 
-            className="form-input"
-            placeholder="Token contract address (0x...)" 
-            value={token} 
-            onChange={e => setToken(e.target.value)} 
-          />
-        </div>
+        {/* Token Address Input - Common for approve, transfer, and history tabs */}
+        {activeTab !== 'buy' && (
+          <div className="form-group">
+            <input 
+              className="form-input"
+              placeholder="Token contract address (0x...)" 
+              value={token} 
+              onChange={e => setToken(e.target.value)} 
+            />
+          </div>
+        )}
+
+        {/* Buy Tokens Tab */}
+        {activeTab === 'buy' && (
+          <>
+            <div className="form-group">
+              <input 
+                className="form-input"
+                placeholder="TokenSale contract address (0x...)" 
+                value={tokenSaleAddress} 
+                onChange={e => setTokenSaleAddress(e.target.value)} 
+              />
+            </div>
+
+            {tokenSaleAddress && (
+              <div className="sale-info">
+                <h3>Token Sale Information</h3>
+                <div className="sale-stats">
+                  <div className="stat-item">
+                    <span className="stat-label">Exchange Rate:</span>
+                    <span className="stat-value">{tokenRate} tokens per ETH</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Token Price:</span>
+                    <span className="stat-value">{parseFloat(saleStats.tokenPrice).toFixed(6)} ETH per token</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Available Tokens:</span>
+                    <span className="stat-value">{parseFloat(saleStats.availableTokens).toFixed(2)} tokens</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Total ETH Raised:</span>
+                    <span className="stat-value">{parseFloat(saleStats.totalEthRaised).toFixed(4)} ETH</span>
+                  </div>
+                  <div className="stat-item">
+                    <span className="stat-label">Total Tokens Sold:</span>
+                    <span className="stat-value">{parseFloat(saleStats.totalTokensSold).toFixed(2)} tokens</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="form-group">
+              <input 
+                className="form-input"
+                placeholder="ETH amount to spend" 
+                value={ethAmount} 
+                onChange={e => setEthAmount(e.target.value)}
+                type="number"
+                step="0.001"
+                min="0"
+              />
+            </div>
+
+            {tokensToReceive && (
+              <div className="token-preview">
+                <span>You will receive: <strong>{parseFloat(tokensToReceive).toFixed(4)} tokens</strong></span>
+              </div>
+            )}
+
+            <div className="button-group">
+              <button 
+                className="btn btn-primary" 
+                onClick={buyTokens}
+                disabled={isLoading || !address || !tokenSaleAddress || !ethAmount}
+              >
+                {isLoading ? <span className="loading-spinner"></span> : null}
+                Buy Tokens
+              </button>
+              <button 
+                className="btn btn-secondary" 
+                onClick={fetchSaleInfo}
+                disabled={isLoading || !tokenSaleAddress}
+              >
+                Refresh Info
+              </button>
+            </div>
+
+            <div className="buy-info">
+              <p><strong>Note:</strong> Make sure you have sufficient ETH in your wallet. Gas fees will be additional to the purchase amount.</p>
+            </div>
+          </>
+        )}
 
         {/* Approve Tab */}
         {activeTab === 'approve' && (
