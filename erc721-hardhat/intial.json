@@ -1,0 +1,9 @@
+{
+    "name": "A duck",
+    "description": "My duck as NFT",
+    "image": "ipfs://bafybeif2yuk4ex7nlvsk6xo5jk35r5vcftadkxadt4jn3rfjh5fw2jyqju",
+    "attributes": [
+      { "trait_type": "Mood", "value": "Chill" },
+      { "trait_type": "Color", "value": "White" }
+    ]
+  }
